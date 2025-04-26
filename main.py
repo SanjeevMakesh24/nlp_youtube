@@ -28,7 +28,10 @@ def extract_video_id(url):
     return url.split("v=")[-1].split("&")[0]
 
 #video link
-video_link = "https://www.youtube.com/watch?v=Kbk9BiPhm7o&t=1s"  
+
+video_link = input("Enter the YouTube video link: ")
+question = input("Enter your question about the video: ")
+
 video_id = extract_video_id(video_link)
 
 try:
@@ -73,7 +76,6 @@ try:
     vectorstore = FAISS.from_documents(docs, embedding_model)
 
 
-    question = "What do they talk about neurosurgery?"
     relevent_docs = vectorstore.similarity_search(question, k=3) #list
 
     #print(type(relevent_docs))
