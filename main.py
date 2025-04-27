@@ -66,7 +66,6 @@ try:
     if chunk:
         docs.append(Document(page_content=chunk.strip(), metadata={"timestamp": chunk_start}))
 
-
     print(f"\n Created {len(docs)} chunks \n")
 
     #a sentence-transformer model for embeddings
@@ -78,7 +77,7 @@ try:
 
     relevent_docs = vectorstore.similarity_search(question, k=3) #list
 
-    #print(type(relevent_docs))
+    #print(type(rtelevent_docs))
 
     #top matching chunks
     print("\nTop Matching Transcript Chunks:")
@@ -107,7 +106,8 @@ try:
     4. If the transcript doesn't contain relevant information to answer the question, clearly state this
     5. Organize your response with clear structure and headings if appropriate
     6. If you need more context from the video, here is the video link {link}
-
+    7. If you need to use a bit of your own reasoning, feel free to use, but keep it to a minimum.
+                                          
     Answer:
     """)
 
@@ -124,6 +124,11 @@ try:
 
     print("\n Final Answer:")
     print(response)
+
+    print("\nTop Timestamps")
+    for i, doc in enumerate(relevent_docs):
+        timestamp = doc.metadata.get("timestamp", "N/A")
+        print(f"{i + 1}. {timestamp:.2f} sec")
     
 
 except Exception as e:
