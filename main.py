@@ -76,6 +76,7 @@ try:
 
 
     relevent_docs = vectorstore.similarity_search(question, k=3) #list
+    top_timestamps = []
 
     #print(type(rtelevent_docs))
 
@@ -86,6 +87,7 @@ try:
         timestamp = doc.metadata.get("timestamp", "N/A")
         print(f"[Timestamp: {timestamp:.2f} sec]")
         print(doc.page_content)
+        top_timestamps.append(timestamp)
 
     
     #prompt template
@@ -126,9 +128,8 @@ try:
     print(response)
 
     print("\nTop Timestamps")
-    for i, doc in enumerate(relevent_docs):
-        timestamp = doc.metadata.get("timestamp", "N/A")
-        print(f"{i + 1}. {timestamp:.2f} sec")
+    for i, time in enumerate(top_timestamps):
+        print(f"{i + 1}. {time:.2f} sec")
     
 
 except Exception as e:
