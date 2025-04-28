@@ -1,47 +1,48 @@
-from youtube_transcript_api import YouTubeTranscriptApi
-from langchain_community.document_loaders import YoutubeLoader
-from langchain_community.llms import OpenAI
-from langchain.chains.summarize import load_summarize_chain
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from flask import Flask, request, jsonify
+from dotenv import load_dotenv
+import os
+from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound, VideoUnavailable, RequestBlocked
+from langchain_openai import OpenAI
+from langchain_core.prompts import PromptTemplate
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain.schema import Document
-from dotenv import load_dotenv
-import os
-from langchain_community.llms import OpenAI
-from langchain_openai import OpenAI
-from langchain_core.prompts import PromptTemplate
 
+#environment
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+load_dotenv()  #load OPENAI_API_KEY
 
-#to load variables from .env file
-load_dotenv()
-
+#flask backend
+app = Flask(__name__)
 llm = OpenAI(temperature=0.2)
 
-#function to extract video ID from URL
+#to extract YouTube video ID
 def extract_video_id(url):
-
-    #https://www.youtube.com/watch?v=042pDj9FJ7Y&ab_channel=TEDxTalks
-    #.split("&")[0] to remove any additional parameters
-    
     return url.split("v=")[-1].split("&")[0]
 
-#video link
+#to format the seconds into minute:second
+def format_ts(seconds):
+    minutes = int(seconds // 60)
+    secs = int(seconds % 60)
 
-video_link = input("Enter the YouTube video link: ")
-question = input("Enter your question about the video: ")
+    return f"{minutes}:{secs:02d}"
 
-video_id = extract_video_id(video_link)
+#to ask specific questions about the video
+@app.route('/query', methods=['POST'])
+def query_video():
+    data = request.get_json(force=True)
+    video_link = data.get('video_link')
+    question = data.get('question')
+    if not video_link or not question:
+        return jsonify({'error': 'Missing `video_link` or `question` field'}), 400
 
-try:
-    #get transcript
-    transcript = YouTubeTranscriptApi.get_transcript(video_id)
-    
-    #join all text segments
-    docs = []
-    for entry in transcript:
-        docs.append(Document(page_content=entry["text"], metadata={"timestamp": entry["start"]})) #to get the timestamp
+    video_id = extract_video_id(video_link)
+    try:
+        transcript = YouTubeTranscriptApi.get_transcript(video_id)
+    except (TranscriptsDisabled, NoTranscriptFound, VideoUnavailable, RequestBlocked) as e:
+        return jsonify({'error': str(e)}), 404
+    except Exception as e:
+        return jsonify({'error': f'Unexpected error: {e}'}), 500
 
     #split the long transcript into smaller chunks
     #chunk_overlap: last 100 characters of one chunk will appear at the beginning of the next chunk
@@ -50,47 +51,30 @@ try:
     chunk = ""
     chunk_start = None
     max_chars = 600
-
     for entry in transcript:
         if chunk_start is None:
-            chunk_start = entry["start"]
-
-        if len(chunk) + len(entry["text"]) <= max_chars:
-            chunk += " " + entry["text"]
+            chunk_start = entry['start']
+        if len(chunk) + len(entry['text']) <= max_chars:
+            chunk += " " + entry['text']
         else:
-            docs.append(Document(page_content=chunk.strip(), metadata={"timestamp": chunk_start}))
-            chunk = entry["text"]
-            chunk_start = entry["start"]
-
-    #add the last chunk
+            docs.append(Document(page_content=chunk.strip(), metadata={'timestamp': chunk_start}))
+            chunk = entry['text']
+            chunk_start = entry['start']
     if chunk:
-        docs.append(Document(page_content=chunk.strip(), metadata={"timestamp": chunk_start}))
+        docs.append(Document(page_content=chunk.strip(), metadata={'timestamp': chunk_start}))
 
-    print(f"\n Created {len(docs)} chunks \n")
-
-    #a sentence-transformer model for embeddings
+    #similarity search
     embedding_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
-    #FAISS vector store from the chunks
     vectorstore = FAISS.from_documents(docs, embedding_model)
+    relevant_docs = vectorstore.similarity_search(question, k=3) #get top 3 chunks
 
+    #extract timestamps and context
+    context = "\n\n".join([doc.page_content for doc in relevant_docs])
 
-    relevent_docs = vectorstore.similarity_search(question, k=3) #list
-    top_timestamps = []
+    top_timestamps = [format_ts(doc.metadata.get('timestamp', 0)) for doc in relevant_docs]
 
-    #print(type(rtelevent_docs))
-
-    #top matching chunks
-    print("\nTop Matching Transcript Chunks:")
-    for i, doc in enumerate(relevent_docs):
-        print(f"\n--- Chunk {i+1} ---")
-        timestamp = doc.metadata.get("timestamp", "N/A")
-        print(f"[Timestamp: {timestamp:.2f} sec]")
-        print(doc.page_content)
-        top_timestamps.append(timestamp)
-
-    
-    #prompt template
+    #prompt template for llm
     prompt = PromptTemplate.from_template("""
     You are an AI assistant helping summarize key points from a YouTube transcript.
 
@@ -100,41 +84,33 @@ try:
     {context}
 
     Question: {question}
-                                          
+
     INSTRUCTIONS:
     1. Focus exclusively on information mentioned in the transcript
     2. Provide direct quotes when possible to support key points
     3. Maintain the original meaning and nuance from the video
     4. If the transcript doesn't contain relevant information to answer the question, clearly state this
-    5. Organize your response with clear structure and headings if appropriate
-    6. If you need more context from the video, here is the video link {link}
-    7. If you need to use a bit of your own reasoning, feel free to use, but keep it to a minimum.
-                                          
-    Answer:
-    """)
+    5. Organize your response with clear headings if appropriate
+    6. If you need more context, refer to the video link: {link}
 
-    context = "\n\n".join([doc.page_content for doc in relevent_docs])
+    Answer:
+    """
+    )
 
     chain = prompt | llm
+    response = chain.invoke({'context': context, 'question': question, 'link': video_link})
 
-    # Run the LLM to get a final answer
-    response = chain.invoke({
-        "context": context,
-        "question": question,
-        "link": video_link
-    })
+    return jsonify({'answer': response, 'timestamps': top_timestamps})
 
-    print("\n Final Answer:")
-    print(response)
+@app.route('/', methods=['GET'])
+def home():
+    return """
+    <h1>YouTube RAG API</h1>
+    """, 200
 
-    print("\nTop Timestamps")
-    for i, time in enumerate(top_timestamps):
-        print(f"{i + 1}. {time:.2f} sec")
-    
 
-except Exception as e:
-    print(f"Error: {e}")
-
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8000, debug=True)
 
 #scope for improvements:
 #longer videos --> more chunks to the llm
