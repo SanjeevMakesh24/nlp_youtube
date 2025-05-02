@@ -7,6 +7,8 @@ from langchain_core.prompts import PromptTemplate
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain.schema import Document
+from langchain.chains.summarize import load_summarize_chain
+
 
 #environment
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -101,6 +103,58 @@ def query_video():
     response = chain.invoke({'context': context, 'question': question, 'link': video_link})
 
     return jsonify({'answer': response, 'timestamps': top_timestamps})
+
+
+# Add new route for summarization
+@app.route('/summarize', methods=['POST'])
+def summarize_video():
+    data = request.get_json(force=True)
+    video_link = data.get('video_link')
+
+    if not video_link:
+        return jsonify({'error': 'Missing video_link'}), 400
+
+    try:
+        video_id = extract_video_id(video_link)
+        transcript = YouTubeTranscriptApi.get_transcript(video_id)
+    except (TranscriptsDisabled, NoTranscriptFound, VideoUnavailable, RequestBlocked) as e:
+        return jsonify({'error': str(e)}), 404
+    except Exception as e:
+        return jsonify({'error': f'Unexpected error: {e}'}), 500
+
+    # Concatenate entire transcript
+    full_text = " ".join([entry['text'] for entry in transcript])
+    start_time = transcript[0]['start'] if transcript else 0
+
+    # Optionally chunk if it's too long for your LLM's context window
+    if len(full_text) > 3000:  # adjust this limit based on your LLM context
+        chunk_size = 1000
+        chunks = [full_text[i:i+chunk_size] for i in range(0, len(full_text), chunk_size)]
+        summaries = []
+        for chunk in chunks:
+            prompt = PromptTemplate.from_template("""
+            Summarize the following transcript section clearly and extremely concisely (1 or 2 sentences):
+
+            {context}
+
+            Summary:
+            """)
+            chain = prompt | llm
+            summary = chain.invoke({'context': chunk})
+            summaries.append(summary)
+        final_summary = "\n".join(summaries)
+    else:
+        prompt = PromptTemplate.from_template("""
+        Summarize the following YouTube transcript clearly and concisely:
+
+        {context}
+
+        Summary:
+        """)
+        chain = prompt | llm
+        final_summary = chain.invoke({'context': full_text})
+
+    return jsonify({'summary': final_summary, 'video_link': video_link})
 
 @app.route('/', methods=['GET'])
 def home():
