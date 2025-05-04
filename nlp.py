@@ -210,7 +210,6 @@ def main():
             st.session_state.new_response_ready = True
 
         # Append deferred assistant response
-        # Append deferred assistant response
         if st.session_state.new_response_ready and st.session_state.last_response:
             st.session_state.chat_history.append({
                 "role":"assistant",
@@ -222,8 +221,6 @@ def main():
             st.session_state.form_submitted = False
 
         # Render chat inside fixed-height container
-        # — build one HTML blob for the whole chat
-        # add a heading before the container
         chat_html = "<div class='chatContainer'>\n"
         chat_html += "<div style='margin-bottom:8px; font-weight:bold;'>Conversation:</div>\n"
         
