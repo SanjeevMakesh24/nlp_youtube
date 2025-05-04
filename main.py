@@ -8,6 +8,7 @@ from langchain_community.vectorstores import FAISS
 from langchain.schema import Document
 from langchain.chains.summarize import load_summarize_chain
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+import streamlit as st
 
 #environment
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -97,12 +98,17 @@ def query_video(video_link, question):
     print(response)
     print("\nTimestamps of relevant parts:", top_timestamps)
 
+    return {
+        "answer": response,          
+        "timestamps": top_timestamps 
+    }
+
 def summarize_video(video_link):
-    print(f"📺 Processing video: {video_link}")
+    print(f"Processing video: {video_link}")
     
     #extract video ID from the link
     video_id = extract_video_id(video_link)
-    print(f"🔑 Extracted video ID: {video_id}")
+    print(f"Extracted video ID: {video_id}")
     
     try:
         #get transcript
@@ -110,16 +116,16 @@ def summarize_video(video_link):
         print(f"✓ Successfully retrieved transcript with {len(raw)} entries")
         
     except (TranscriptsDisabled, NoTranscriptFound, VideoUnavailable) as e:
-        print(f"❌ Transcript Error: {e}")
+        print(f"Transcript Error: {e}")
         return f"Could not retrieve transcript: {str(e)}"
         
     except Exception as e:
-        print(f"❌ Unexpected error: {e}")
+        print(f"Unexpected error: {e}")
         return f"An unexpected error occurred: {str(e)}"
 
     #join all transcript entries into a single text
     text = " ".join(entry["text"] for entry in raw)
-    print(f"📝 Total transcript length: {len(text)} characters")
+    print(f"Total transcript length: {len(text)} characters")
     
     # Split text into manageable chunks
     splitter = RecursiveCharacterTextSplitter(
@@ -128,7 +134,7 @@ def summarize_video(video_link):
         separators=["\n\n", "\n", ". ", " ", ""] 
     )
     docs = splitter.create_documents([text])
-    print(f"🔖 Split transcript into {len(docs)} chunks")
+    print(f"split transcript into {len(docs)} chunks")
 
     #process each chunk into a concise paragraph
     map_prompt = PromptTemplate(
@@ -148,6 +154,7 @@ def summarize_video(video_link):
     Each paragraph should be no more than 5-6 sentences.
     Highlight the key themes and include direct quotes sparingly.
     If the transcript doesn't cover something, omit it—do not speculate.
+    But don't finish a sentance halfway, just finish it no matter what.
 
     Here are the individual paragraph summaries:
     {text}
@@ -171,27 +178,209 @@ def summarize_video(video_link):
     
     print("\n--- Video Summary ---\n")
     print(final_summary)
+    return final_summary
 
 
 #run directly
+# Main Streamlit App
+def main():
+    st.set_page_config(
+        page_title="YouTube Chatbot",
+        page_icon="🎬",
+        layout="wide"
+    )
+
+    # Initialize session state for chat history
+    if 'chat_history' not in st.session_state:
+        st.session_state.chat_history = []
+    
+    if 'current_video_id' not in st.session_state:
+        st.session_state.current_video_id = None
+        
+    if 'video_title' not in st.session_state:
+        st.session_state.video_title = None
+        
+    if 'summary_generated' not in st.session_state:
+        st.session_state.summary_generated = False
+        
+    if 'form_submitted' not in st.session_state:
+        st.session_state.form_submitted = False
+
+    # App title and header
+    st.markdown(
+        """
+        <div style='text-align: center; margin-bottom: 20px;'>
+            <h1>🎬 YouTube Chatbot</h1>
+            <p>Ask questions about YouTube videos without watching the entire content</p>
+        </div>
+        """, 
+        unsafe_allow_html=True
+    )
+
+    # Two-column layout
+    col1, col2 = st.columns([1, 1])
+
+    with col1:
+        st.markdown("<h3>📺 Video Player</h3>", unsafe_allow_html=True)
+        
+        # Video URL input
+        video_url = st.text_input("Enter YouTube Video URL:", placeholder="https://www.youtube.com/watch?v=...")
+        
+        # Process video URL
+        if st.button("📥 Load Video"):
+            video_id = extract_video_id(video_url)
+            if not video_id:
+                st.error("Invalid YouTube URL. Please check and try again.")
+            else:
+                # Reset chat history when loading a new video
+                if st.session_state.current_video_id != video_id:
+                    st.session_state.chat_history = []
+                    st.session_state.summary_generated = False
+                
+                st.session_state.current_video_id = video_id
+                st.session_state.video_title = video_url  # Using URL as title for now
+                
+                # Add system message to chat history
+                st.session_state.chat_history.append({
+                    "role": "system",
+                    "content": f"Video loaded: {st.session_state.video_title}"
+                })
+        
+        # Display the YouTube video if ID is available
+        if st.session_state.current_video_id:
+            st.markdown(
+                f'<iframe width="100%" height="315" src="https://www.youtube.com/embed/{st.session_state.current_video_id}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>',
+                unsafe_allow_html=True
+            )
+            
+            # Video controls
+            if st.button("📝 Generate Summary"):
+                with st.spinner("Generating summary..."):
+                    summary = summarize_video(video_url)  # Use the full URL
+                    
+                    # Add response to chat history
+                    st.session_state.chat_history.append({
+                        "role": "assistant",
+                        "content": summary
+                    })
+                    st.session_state.summary_generated = True
+                
+    with col2:
+        st.markdown("<h3>💬 Chat</h3>", unsafe_allow_html=True)
+
+        # start a scrollable container at 400px tall
+        st.markdown(
+            """
+            <div style="
+                border:1px solid #ddd;
+                border-radius:8px;
+                padding:8px;
+                max-height:400px;
+                overflow-y:auto;
+                background-color:#f9f9f9;
+            ">
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # now dump all of chat_history inside that div
+        for message in st.session_state.chat_history:
+            if message["role"] == "system":
+                st.markdown(f"""
+                    <div style='text-align:center; color:#555; font-style:italic; margin:4px 0;'>
+                    {message["content"]}
+                    </div>
+                """, unsafe_allow_html=True)
+            elif message["role"] == "user":
+                st.markdown(f"""
+                    <div style='background-color:#e6f7ff; padding:8px; border-radius:5px; margin:4px 0;'>
+                    <b>You:</b> {message["content"]}
+                    </div>
+                """, unsafe_allow_html=True)
+            else:  # assistant
+                st.markdown(f"""
+                    <div style='background-color:#f0f0f0; padding:8px; border-radius:5px; margin:4px 0;'>
+                    <b>Assistant:</b> {message["content"]}
+                    </div>
+                """, unsafe_allow_html=True)
+
+        # close the scrollable div
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # below that div, your input box and buttons
+        user_question = st.text_input("Ask a question about the video:", key="user_question")
+        
+        col_submit, col_clear = st.columns([1, 1])
+        with col_submit:
+            submit_button = st.button("🔍 Submit Question", key="submit")
+            # Reset form_submitted when the question changes
+            if 'previous_question' not in st.session_state:
+                st.session_state.previous_question = ""
+            if user_question != st.session_state.previous_question:
+                st.session_state.form_submitted = False
+                st.session_state.previous_question = user_question
+        
+        with col_clear:
+            clear_chat = st.button("🗑️ Clear Chat")
+            
+                    # Process user question
+        if submit_button and user_question and st.session_state.current_video_id:
+            # Store the question to process
+            question_to_process = user_question
+            
+            # Create a form submit state to prevent duplicate processing
+            if 'form_submitted' not in st.session_state:
+                st.session_state.form_submitted = False
+                
+            if not st.session_state.form_submitted:
+                st.session_state.form_submitted = True
+                
+                # Add user question to chat history
+                st.session_state.chat_history.append({
+                    "role": "user",
+                    "content": question_to_process
+                })
+                
+                # Process the question
+                with st.spinner("Analyzing video content..."):
+                    video_url = st.session_state.video_title  # Use stored URL
+                    result = query_video(video_url, question_to_process)
+                    
+                    if result and "answer" in result:
+                        # Format the response with timestamps
+                        timestamps_formatted = ", ".join([f"[{ts}]" for ts in result["timestamps"]])
+                        response = f"{result['answer']}\n\n**Relevant timestamps:** {timestamps_formatted}"
+                        
+                        # Add response to chat history
+                        st.session_state.chat_history.append({
+                            "role": "assistant",
+                            "content": response
+                        })
+                    else:
+                        st.session_state.chat_history.append({
+                            "role": "assistant",
+                            "content": "Sorry, I couldn't process your question. Please try again."
+                        })
+                
+               
+            else:
+                # Reset the form submission state for the next question
+                st.session_state.form_submitted = False
+                
+        # Clear chat history
+        if clear_chat:
+            st.session_state.chat_history = []
+            st.session_state.form_submitted = False
+            if st.session_state.current_video_id:
+                st.session_state.chat_history.append({
+                    "role": "system",
+                    "content": f"Video loaded: {st.session_state.video_title}"
+                })
+           
+        
+        # Instructions when no video is loaded
+        if not st.session_state.current_video_id:
+            st.info("👆 Enter a YouTube URL and click 'Load Video' to start chatting.")
+
 if __name__ == "__main__":
-    print("Choose an option:")
-    print("1. Ask a question about the video")
-    print("2. Summarize the video")
-    choice = input("Enter 1 or 2: ").strip()
-
-    video_link = input("Enter YouTube video link: ").strip()
-
-    if choice == "1":
-        question = input("Enter your question: ").strip()
-        query_video(video_link, question)
-    elif choice == "2":
-        summarize_video(video_link)
-    else:
-        print("Invalid choice. Please enter 1 or 2.")
-
-
-#scope for improvements:
-#longer videos --> more chunks to the llm
-
-#Summarize the following transcript section clearly and extremely concisely (1 or 2 sentences):
+    main()
