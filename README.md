@@ -33,3 +33,11 @@
    	OPENAI_API_KEY=sk-YOUR_KEY_HERE
 6. Run the project:
 	streamlit run nlp.py
+
+## Usage
+1. Paste a YouTube URL.
+2. Click Load Video → watch the video embed appear.
+3. Click Generate Summary for an overall overview.
+4. Type questions in the chat box → click Submit Question
+5. See answers with timestamps.
+6. Ask follow-up questions.
