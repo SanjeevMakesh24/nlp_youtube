@@ -55,12 +55,22 @@ def query_video(video_link, question):
     prompt = PromptTemplate.from_template("""
 You are an AI assistant helping summarize key points from a YouTube transcript.
 
-Context:
-{context}
+    Use the context below to answer the question thoroughly and accurately, reflecting what was actually said in the video.
 
-Question: {question}
+    Context:
+    {context}
 
-Answer:
+    Question: {question}
+
+    INSTRUCTIONS:
+    1. Focus exclusively on information mentioned in the transcript
+    2. Provide direct quotes when possible to support key points
+    3. Maintain the original meaning and nuance from the video
+    4. If the transcript doesn't contain relevant information to answer the question, clearly state this
+    5. Organize your response with clear headings if appropriate
+    6. If you need more context, refer to the video link: {link}
+
+    Answer:
 """)
     chain = prompt | llm
     answer = chain.invoke({"context": context, "question": question, "link": video_link})
