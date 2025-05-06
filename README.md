@@ -1,6 +1,6 @@
 # YouTube ChatBot
 ## Ask questions and get instant answer about a video
-
+![image](https://github.com/user-attachments/assets/a7607e7b-91d5-4371-a375-33e1f75f42d1)
 ## 🚀 Features & Architecture
 - **Transcript Extraction**  
   Fetches YouTube captions (automatic or community-generated) via `youtube_transcript_api`, with optional rotating-proxy support to avoid IP blocks.  
