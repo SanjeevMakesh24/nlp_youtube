@@ -29,5 +29,7 @@
 	source .venv/bin/activate
 4. Install dependencies:
 	pip install -r requirements.txt
-5. Run the project:
-	python nlp.py
+5. Create a .env file in the project root:
+   	OPENAI_API_KEY=sk-YOUR_KEY_HERE
+6. Run the project:
+	streamlit run nlp.py
