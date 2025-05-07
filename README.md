@@ -35,6 +35,7 @@
 	streamlit run nlp.py
 
 ## Usage
+[Watch the demo video](https://www.youtube.com/watch?v=V-Lu0A0U5e4)
 1. Paste a YouTube URL.
 2. Click Load Video → watch the video embed appear.
 3. Click Generate Summary for an overall overview.
