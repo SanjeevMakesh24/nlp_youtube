@@ -42,7 +42,7 @@ langchain-core==0.3.56
 langchain-huggingface==0.1.2
 langchain-openai==0.3.14
 langchain-text-splitters==0.3.7
-langsmith==0.3.22
+langsmith==0.8.18
 MarkupSafe==3.0.2
 marshmallow==3.26.1
 mpmath==1.3.0
